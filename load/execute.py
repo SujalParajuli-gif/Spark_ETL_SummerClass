@@ -1,3 +1,4 @@
+
 import sys
 import os
 import psycopg2
@@ -17,8 +18,80 @@ def create_spark_session():
     """Initialize a Spark session."""
     return SparkSession.builder \
         .appName("Load and Execute") \
-        .config("spark.jars", "/home/sujal/Workspace/pyspark/venv/lib/python3.10/site-packages/pyspark/jars/")\
+        .config("spark.jars", "/home/sujal/Workspace/pyspark/venv/lib/python3.10/site-packages/pyspark/jars/") \
         .getOrCreate()
+
+def unlock_tables(pg_un, pg_pw):
+    """Unlock all tables to ensure they are accessible."""
+    conn = None
+    try:
+        conn = psycopg2.connect(
+            dbname="postgres",
+            user=pg_un,
+            password=pg_pw,
+            host="localhost",
+            port="5432"
+        )
+        cursor = conn.cursor()
+        
+        # Disable row-level security if it's enabled
+        unlock_table_query = """
+        ALTER TABLE public.master_table DISABLE ROW LEVEL SECURITY;
+        ALTER TABLE public.shopping_behavior DISABLE ROW LEVEL SECURITY;
+        ALTER TABLE public.shopping_trends DISABLE ROW LEVEL SECURITY;
+        """
+        cursor.execute(unlock_table_query)
+        conn.commit()
+        logger.info("Tables have been unlocked successfully.")
+
+    except Exception as e:
+        logger.error(f"Error unlocking tables: {e}")
+
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+def create_master_table(pg_un, pg_pw):
+    """Create the master table in PostgreSQL."""
+    conn = None
+    try:
+        conn = psycopg2.connect(
+            dbname="postgres",
+            user=pg_un,
+            password=pg_pw,
+            host="localhost",
+            port="5432"
+        )
+        cursor = conn.cursor()
+
+        # Create the master_table schema in PostgreSQL
+        create_table_query = """
+        CREATE TABLE IF NOT EXISTS master_table (
+            user_id VARCHAR(50),
+            age INT,
+            gender VARCHAR(10),
+            income FLOAT,
+            purchased_items TEXT,
+            item_id VARCHAR(50),
+            category VARCHAR(50),
+            trend_score FLOAT,
+            popularity INT
+        );
+        """
+        cursor.execute(create_table_query)
+        conn.commit()
+        logger.info("Master table created successfully.")
+
+    except Exception as e:
+        logger.error(f"Error creating master table: {e}")
+
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
 
 def create_postgres_tables(pg_un, pg_pw):
     """Create PostgreSQL tables if they don't exist using psycopg2."""
@@ -34,11 +107,19 @@ def create_postgres_tables(pg_un, pg_pw):
         cursor = conn.cursor()
 
         create_table_queries = [
-            """ CREATE TABLE IF NOT EXISTS master_table (track_id VARCHAR(50), track_name TEXT, track_popularity INTEGER, artist_id VARCHAR(50), artist_name TEXT, followers FLOAT, genres TEXT, artist_popularity INTEGER, danceability FLOAT, energy FLOAT, tempo FLOAT, related_ids TEXT[]); """,
-            """ CREATE TABLE IF NOT EXISTS recommendations_exploded (id VARCHAR(50), related_id VARCHAR(50)); """,
-            """ CREATE TABLE IF NOT EXISTS artist_track (id VARCHAR(50), artist_id VARCHAR(50)); """,
-            """ CREATE TABLE IF NOT EXISTS tracks_metadata (id VARCHAR(50) PRIMARY KEY, name TEXT, popularity INTEGER, duration_ms INTEGER, danceability FLOAT, energy FLOAT, tempo FLOAT); """,
-            """ CREATE TABLE IF NOT EXISTS artists_metadata (id VARCHAR(50) PRIMARY KEY, name TEXT, followers FLOAT, popularity INTEGER); """
+            """ CREATE TABLE IF NOT EXISTS shopping_behavior (
+                    user_id VARCHAR(50) PRIMARY KEY,
+                    age INT,
+                    gender VARCHAR(10),
+                    income FLOAT,
+                    purchased_items TEXT
+                ); """,
+            """ CREATE TABLE IF NOT EXISTS shopping_trends (
+                    item_id VARCHAR(50) PRIMARY KEY,
+                    category VARCHAR(50),
+                    trend_score FLOAT,
+                    popularity INT
+                ); """
         ]
 
         for query in create_table_queries:
@@ -64,19 +145,32 @@ def load_to_postgres(spark, input_dir, pg_un, pg_pw):
         "driver": "org.postgresql.Driver"
     }
 
+    # Updated paths to your correct Parquet files
     tables = [
-        ("stage2/master_table", "master_table"),
-        ("stage3/recommendations_exploded", "recommendations_exploded"),
-        ("stage3/artist_track", "artist_track"),
-        ("stage3/tracks_metadata", "tracks_metadata"),
-        ("stage3/artists_metadata", "artists_metadata")
+        ("/home/sujal/Data/Transform/stage2/master_table", "master_table"),
+        ("/home/sujal/Data/Transform/stage3/shopping_behavior_metadata", "shopping_behavior"),
+        ("/home/sujal/Data/Transform/stage3/shopping_trends_metadata", "shopping_trends")
     ]
 
     for parquet_path, table_name in tables:
         start_time = time.time()  # Start the timer
         try:
-            df = spark.read.parquet(os.path.join(input_dir, parquet_path))
-            mode = "append" if 'master' in parquet_path else "overwrite"
+            # Check if the path exists
+            if not os.path.exists(parquet_path):
+                logger.error(f"Path does not exist: {parquet_path}")
+                continue
+
+            # Read parquet file into Spark DataFrame
+            df = spark.read.parquet(parquet_path)
+
+            # Handle missing data (Replace column names based on your dataset)
+            if table_name == 'shopping_behavior':
+                df = df.fillna({'income': 0, 'purchased_items': 'Unknown'})  # Adjust column names
+            if table_name == 'shopping_trends':
+                df = df.fillna({'trend_score': 0, 'popularity': 0, 'category': 'Unknown'})  # Adjust for missing columns
+
+            # Write to PostgreSQL with either append or overwrite mode
+            mode = "append" if 'shopping_behavior' in parquet_path else "overwrite"
             df.write \
                 .mode(mode) \
                 .jdbc(jdbc_url, table_name, properties=connection_properties)
@@ -88,6 +182,9 @@ def load_to_postgres(spark, input_dir, pg_un, pg_pw):
         elapsed_time = end_time - start_time  # Calculate the elapsed time
         formatted_time = format_time(elapsed_time)  # Format the time
         logger.info(f"Loading {table_name} took {formatted_time}.")
+    
+    create_master_table(pg_un, pg_pw)
+    unlock_tables(pg_un, pg_pw)
 
 if __name__ == "__main__":
     if len(sys.argv) != 4:
