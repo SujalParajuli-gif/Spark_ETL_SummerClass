@@ -1,0 +1,110 @@
+
+User Manual – ETL Pipeline for Consumer Behavior and Shopping Trends Dataset
+
+This guide outlines the steps to download, set up, and execute the project on your local machine.
+
+1. System Requirements
+
+Before starting, ensure that you have the following tools installed:
+- Python 3.8 or later (Download from Python's official website: https://www.python.org/downloads/)
+- Apache Spark (Install from Apache Spark's official page: https://spark.apache.org/downloads.html)
+- PostgreSQL (Download and install from PostgreSQL's website: https://www.postgresql.org/download/)
+- Git (Used for cloning the repository)
+
+2. Clone the Repository
+
+To fetch the project from GitHub, open your terminal (or Command Prompt) and run the following commands:
+
+    git clone https://github.com/SujalParajuli-gif/Spark_ETL_SummerClass.git
+    cd Spark_ETL_SummerClass
+
+This will clone the repository to your local machine and navigate to the project directory.
+
+3. Install Dependencies
+
+Once inside the project folder, install the necessary Python libraries:
+
+    pip install -r requirements.txt
+
+4. Configure PostgreSQL
+
+Follow these steps to set up PostgreSQL:
+
+1. Start the PostgreSQL service:
+   On Linux/Ubuntu, run:
+   sudo service postgresql start
+
+2. Create a new database:
+   You can create a new database in PostgreSQL. The default database name is `postgres`, but you can create one specific for this project:
+
+    CREATE DATABASE spark_etl_db;
+
+3. Update the load.py file:
+   Open the load.py script in the project and adjust the PostgreSQL connection details if necessary:
+
+    conn_params = {
+        "dbname": "spark_etl_db",
+        "user": "postgres",
+        "password": "123",
+        "host": "localhost",
+        "port": "5432"
+    }
+
+5. Running the ETL Process
+
+To perform the ETL tasks, execute each step in the following sequence:
+
+Step 1 – Extraction:
+To extract the data from the ZIP file, run:
+
+    python extract/extract.py /path/to/extract
+
+This will extract the dataset and make it available for transformation.
+
+Step 2 – Transformation:
+To clean and prepare the data, run:
+
+    python transform/transform.py /path/to/extract /path/to/output
+
+This will process the data and prepare it for loading into PostgreSQL.
+
+Step 3 – Loading:
+To load the transformed data into PostgreSQL, execute:
+
+    python load/load.py /path/to/output
+
+This step will insert the processed data into your PostgreSQL database.
+
+6. Verify Data in PostgreSQL
+
+To confirm that the data has been successfully loaded, log in to PostgreSQL and run:
+
+    SELECT * FROM master_table LIMIT 10;
+
+This will show the first 10 rows of the `master_table` to validate the load.
+
+7. Create Visualizations 
+
+If you want to create visualizations from the loaded data, follow these steps:
+
+1. Install Apache Superset (or another visualization tool like Tableau):
+   You can install Apache Superset by following the guide on Superset's installation page (https://superset.apache.org/docs/installation).
+
+2. Connect Superset to PostgreSQL:
+   After installation, connect Superset to your PostgreSQL database.
+
+3. Create Visualizations:
+   Once connected, you can explore the data in `master_table` and create various charts like bar or pie charts.
+
+8. Completion
+
+You have successfully set up the Consumer Behavior and Shopping Trends ETL pipeline, which extracts, transforms, and loads the dataset into PostgreSQL for further analysis and visualization.
+
+requirements.txt:
+
+Here’s the `requirements.txt` for your project:
+
+pyspark==3.2.0
+psycopg2==2.9.1
+
+This will install Apache Spark and PostgreSQL drivers required for your ETL process.
